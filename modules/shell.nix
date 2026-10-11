@@ -287,21 +287,32 @@ in
   programs.bash = {
     completion.enable = true;
     # In mc's skin colours: a teal bar (mc's selection, 253 on 23) with
-    # user@host #1, the directory in sand (180, mc's headers) and [git branch] in orange
+    # user@host #N, the directory in sand (180, mc's headers) and [git branch] in orange
     # (214, mc's hotkeys); then an orange "> " on its own line.
     # \[ \] mark the colour codes as zero-width for line editing.
     # The [branch] only inside a git repository. The bar ends in a triangle
     # where it is exactly the line's height: Nerd Fonts draw it as tall as the
     # line, so only in xfce4-terminal (VTE) with a Nerd Font (VictorMono, as
     # set); elsewhere (the console, another font) the bar just ends.
+    # #N: how deeply this shell is nested (bash, nix-shell, su, ... typed in
+    # it). Not $SHLVL, which the desktop and terminal already raise: counted
+    # per terminal, so a new window or SSH login (a new tty) starts at #1.
     promptInit = ''
+      _meccanicos_tty=$(tty 2>/dev/null)
+      if [ "''${MOS_SHELL_TTY:-}" = "$_meccanicos_tty" ]; then
+        MOS_SHELL_DEPTH=$((''${MOS_SHELL_DEPTH:-0} + 1))
+      else
+        MOS_SHELL_DEPTH=1
+      fi
+      export MOS_SHELL_TTY=$_meccanicos_tty MOS_SHELL_DEPTH
+      unset _meccanicos_tty
       _meccanicos_end=""
       if [ -n "''${VTE_VERSION:-}" ]; then
         case $(xfconf-query -c xfce4-terminal -p /font-name 2>/dev/null) in
           *"Nerd Font"*) _meccanicos_end='\[\e[0;38;5;23m\]' ;;
         esac
       fi
-      PS1='\[\e[38;5;253;48;5;23m\] \u@\h #1 \[\e[38;5;180m\]\w \[\e[38;5;214m\]$(b=$(git branch -q --show-current 2>/dev/null) && [ -n "$b" ] && printf "[%s] " "$b")'"$_meccanicos_end"'\[\e[0m\]\n\[\e[38;5;214m\]>\[\e[0m\] '
+      PS1='\[\e[38;5;253;48;5;23m\] \u@\h #$MOS_SHELL_DEPTH \[\e[38;5;180m\]\w \[\e[38;5;214m\]$(b=$(git branch -q --show-current 2>/dev/null) && [ -n "$b" ] && printf "[%s] " "$b")'"$_meccanicos_end"'\[\e[0m\]\n\[\e[38;5;214m\]>\[\e[0m\] '
       unset _meccanicos_end
     '';
     # fzf's keys load first so Atuin (below) gets to own Ctrl-R.

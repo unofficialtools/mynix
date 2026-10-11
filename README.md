@@ -432,7 +432,7 @@ mos-dropbox status | logout
 settings in one place — screen scale, resolution and rotation (landscape or
 portrait), wallpaper, screensaver and lock, keyboard layouts, touchpad, power, sound,
 clock, time zone and, once installed, the lid, hibernation, updates, SSH and
-firewall ports, the graphics driver:
+firewall ports, the graphics driver, the computer name:
 
 In a terminal, `mos-config` opens them full screen: move with the arrows, Enter
 changes the one under the cursor (pick from a list, flip on/off, or type it),
@@ -576,6 +576,7 @@ One page, no wizard:
   Screen           Landscape / Portrait
   Wi-Fi network    (scanned list)      Wi-Fi password  ••••
   Full name / Username / Password
+  Computer name    meccanicos          ← the hostname other machines see
   Disk password    ••••••••            ← full-disk encryption, asked at every boot
   Target disk      nvme0n1  512.1 GB  Samsung SSD …
   Filesystem       ext4 on LUKS2 (encrypted), EFI boot
@@ -681,6 +682,7 @@ at its **latest release** (the `latest` tag, moved by each release), pinned in `
 | Update now | `mos-upgrade`: the newest MeccanicOS release and NixOS packages (`--check` shows yours and the newest, `--boot` applies at the next restart; `mos-update` is the same) |
 | Automatic updates | weekly in the background, applied at the next restart (notification); off with `mos-config set updates.auto off` |
 | SSH, firewall ports, lid, hibernation, graphics driver | `mos-config set security.ssh off`, `mos-config set security.tcp_ports 8080` … (`mos-config` lists them) |
+| Computer name (hostname) | `mos-config set network.hostname laptop` (rebuilds; open windows keep working) |
 | Something isn't working | `mos-doctor` |
 | Roll back | `mos-updates` → *Go back to the previous system*, or pick an older entry in the boot menu |
 | Backups | `mos-backup init /media/disk` → `mos-backup now` → `mos-backup auto on` (nightly); `mos-backup browse` or *Versions from Backups…* to get files back |

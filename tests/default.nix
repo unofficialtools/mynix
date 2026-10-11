@@ -274,7 +274,7 @@ in
               "country": "Italy", "language": "English (United States)", "timezone": "Europe/Rome",
               "keyboard": "English (US)", "screen": "Landscape",
               "wifi": "", "wifi_security": "", "wifi_password": "",
-              "fullname": "Test User", "username": "tester", "password": "user-pass-1",
+              "fullname": "Test User", "username": "tester", "password": "user-pass-1", "hostname": "testbox",
               "luks_password": "luks-test-pass-sixteen", "disk": "/dev/vda", "disk_label": "vda test disk",
           }
           machine.succeed(f"echo {shlex.quote(json.dumps(answers))} > /tmp/answers.json")
@@ -293,6 +293,7 @@ in
 
       with subtest("user, sudo, SSH policy, settings"):
           machine.succeed("id tester | grep >/dev/null wheel")
+          machine.succeed("test \"$(hostname)\" = testbox")                     # name chosen in the installer
           machine.succeed("su - tester -c 'sudo -n true'")                      # passwordless sudo
           machine.succeed("sshd -T | grep >/dev/null -i '^passwordauthentication no'")     # keys only
           # /tmp and nix builds on the disk, not in RAM (the live USB keeps them in RAM).
@@ -309,6 +310,9 @@ in
           machine.succeed("su - tester -c 'mos-config set security.tcp_ports 8080,8443 --no-rebuild'")
           machine.succeed("grep -qx 'tcp_ports = \\[8080, 8443\\]' /etc/nixos/meccanicos.toml")
           machine.succeed("su - tester -c 'mos-config get security.tcp_ports' | grep >/dev/null -x 8080,8443")
+          machine.succeed("su - tester -c 'mos-config set network.hostname newbox --no-rebuild'")
+          machine.succeed("grep -qx 'hostname = \"newbox\"' /etc/nixos/meccanicos.toml")
+          machine.fail("grep -q hostname /home/tester/.config/meccanicos/settings.toml")  # stays with this machine
           machine.succeed("rm /etc/nixos/meccanicos.toml")
           # firewall: SSH and mDNS only; no LAN-sync port, no mosh, no ping
           machine.succeed("iptables -S nixos-fw | grep >/dev/null -- '--dport 22 '")

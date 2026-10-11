@@ -10,6 +10,7 @@ Environment (set by the Nix wrapper):
   MECCANICOS_SYSTEM_DISK_BYTES  space it takes on the target (for the progress bar)
   MECCANICOS_FLAKE    store path of /etc/nixos's flake.nix (+ flake.lock), see mkInstalled
   MECCANICOS_NAME     distro name, e.g. "MeccanicOS"
+  MECCANICOS_HOSTNAME default hostname, e.g. "meccanicos"
   MECCANICOS_ISO_LABEL  volume label of the live USB (excluded from targets)
 Testing:
   MECCANICOS_INSTALL_TEST=1   run disk steps but skip nixos-install / nixos-enter
@@ -31,6 +32,8 @@ sys.path.insert(0, os.environ.get("MECCANICOS_PYLIB") or os.path.join(os.path.di
 import mos_tui as ui  # noqa: E402
 
 NAME = os.environ.get("MECCANICOS_NAME", "MeccanicOS")
+HOSTNAME = os.environ.get("MECCANICOS_HOSTNAME", "meccanicos")
+HOSTNAME_RE = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 SYSTEM = os.environ.get("MECCANICOS_SYSTEM", "")
 FLAKE = os.environ.get("MECCANICOS_FLAKE", "")
 ISO_LABEL = os.environ.get("MECCANICOS_ISO_LABEL", "MECCANICOS_LIVE")
@@ -422,6 +425,7 @@ class Form:
             "wifi_password": "",
             "fullname": "",
             "username": "",
+            "hostname": HOSTNAME,
             "password": "",
             "luks_password": "",
             "disk": "",
@@ -439,6 +443,7 @@ class Form:
             ("fullname", "Full name"),
             ("username", "Username"),
             ("password", "Password"),
+            ("hostname", "Computer name"),
             ("luks_password", "Disk password"),
             ("disk", "Target disk"),
             ("fs", "Filesystem"),
@@ -727,6 +732,10 @@ def edit(scr, f, key):
         s = popup_input(scr, "Username", v["username"], hint="lowercase letters, digits, - and _")
         if s is not None:
             v["username"] = s.strip()
+    elif key == "hostname":
+        s = popup_input(scr, "Computer name (hostname)", v["hostname"], hint="letters, digits and -; how other machines see this one")
+        if s is not None:
+            v["hostname"] = s.strip().lower() or HOSTNAME
     elif key == "password":
         p, err = ask_password(scr, "User password", 1)
         if p is not None:
@@ -758,6 +767,8 @@ def validate(v):
         errs.append("Username: lowercase letters/digits, starting with a letter.")
     elif v["username"] in ("root", "nixos", "nobody", "daemon", "bin", "sys", "messagebus", "sshd", "nixbld"):
         errs.append(f"Username '{v['username']}' is reserved.")
+    if not HOSTNAME_RE.fullmatch(v["hostname"]):
+        errs.append("Computer name: letters, digits and -, not starting or ending with -.")
     if not v["password"]:
         errs.append("Set a user password.")
     if len(v["luks_password"]) < LUKS_MIN:
@@ -798,7 +809,8 @@ def tui(scr):
                 f"Erase the {drive_name(f.v['disk']).split(' (')[0]}?",
                 "\n".join(erase_warning(f.v["disk"], " ".join(f.v["disk_label"].split())))
                 + f"\n\nThen {NAME} is installed on it, encrypted.\n"
-                f"User: {f.v['username']} (passwordless sudo)   Keyboard: {f.v['keyboard']}\n"
+                f"User: {f.v['username']} (passwordless sudo)   Computer name: {f.v['hostname']}\n"
+                f"Keyboard: {f.v['keyboard']}\n"
                 f"Language: {f.v['language']}   Time zone: {f.v['timezone']}",
                 confirm_word="YES",
                 danger=True,
@@ -969,6 +981,10 @@ def write_runtime_config(v, s):
         f"COUNTRY={s['country']}\nXKB_LAYOUT={s['xkb_layout']}\nXKB_VARIANT={s['xkb_variant']}\n"
         f"ORIENTATION={'portrait' if s['portrait'] else 'landscape'}\n",
     )
+    # The prebuilt system says HOSTNAME; mos-hostname uses this name until a
+    # rebuild bakes in local.nix's networking.hostName (then deletes it).
+    if v["hostname"] != HOSTNAME:
+        write("/etc/meccanicos/hostname", v["hostname"] + "\n")
     write("/etc/modprobe.d/mos-regdom.conf", f"options cfg80211 ieee80211_regdom={s['country']}\n")
 
     if v["wifi"]:
@@ -1017,7 +1033,7 @@ def create_user(v):
     ssh = f"/home/{u}/.ssh"
     enter(
         f"install -d -m 700 -o {u} -g users {ssh} && "
-        f"ssh-keygen -q -t ed25519 -a 100 -N '' -C {shlex.quote(u + '@' + NAME.lower())} -f {ssh}/id_ed25519 && "
+        f"ssh-keygen -q -t ed25519 -a 100 -N '' -C {shlex.quote(u + '@' + v['hostname'])} -f {ssh}/id_ed25519 && "
         f"chown {u}:users {ssh}/id_ed25519 {ssh}/id_ed25519.pub"
     )
     print(f"    {u}: member of wheel (passwordless sudo). Root login is disabled.")
@@ -1052,6 +1068,7 @@ def write_nixos_config(v, s):
 # Edit freely, then apply with:  mos-rebuild
 {{ ... }}:
 {{
+  networking.hostName = {nix_str(v['hostname'])};
   time.timeZone = {nix_str(s['timezone'])};
   i18n.defaultLocale = {nix_str(s['lang'])};
 {extra}  console.keyMap = {nix_str(s['keymap'])};
@@ -1085,6 +1102,10 @@ def main():
         return 1
     if len(sys.argv) > 2 and sys.argv[1] == "--config":
         v = json.load(open(sys.argv[2]))
+        v.setdefault("hostname", HOSTNAME)
+        if not HOSTNAME_RE.fullmatch(v["hostname"]):
+            print(f"Bad hostname: {v['hostname']!r}")
+            return 1
         # No form here: the same big red warning, and YES typed (or piped) in.
         lines = erase_warning(v["disk"]) + ["", "Type YES and press Enter to erase it. Anything else cancels."]
         w = max(len(l) for l in lines)

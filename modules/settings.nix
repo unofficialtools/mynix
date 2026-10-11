@@ -42,6 +42,8 @@ in
         HandleLidSwitchExternalPower = lib.mkForce lidAction.${s.lid};
       };
     })
+    # Over local.nix's (the installer writes one there).
+    (lib.mkIf (has "hostname") { networking.hostName = lib.mkForce s.hostname; })
     (lib.mkIf (has "gpu" && s.gpu != "auto") { boot.kernelParams = [ "meccanicos.gpu=${s.gpu}" ]; })
     # Laptops that can stop charging early expose the threshold in sysfs.
     (lib.mkIf (has "charge_limit") {

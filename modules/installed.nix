@@ -159,6 +159,47 @@ in
 
   # ---- Identity / locale (runtime-adjustable) ----------------------------
   networking.hostName = lib.mkDefault distro.hostName;
+  # The running name follows networking.hostName. NixOS only writes
+  # /etc/hostname, so without this a rebuild that renames the computer would
+  # take effect at the next start. The script holds the name, so a rename
+  # restarts it. Until a rebuild names it (local.nix or mos-config), the
+  # prebuilt system uses the name picked in the installer
+  # (/etc/meccanicos/hostname).
+  systemd.services.mos-hostname =
+    let
+      name = lib.escapeShellArg config.networking.hostName;
+    in
+    {
+      description = "Set the computer name";
+      wantedBy = [ "sysinit.target" ];
+      before = [
+        "network-pre.target"
+        "NetworkManager.service"
+        "avahi-daemon.service"
+      ];
+      wants = [ "network-pre.target" ];
+      unitConfig.DefaultDependencies = false;
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      path = [
+        pkgs.coreutils
+        pkgs.hostname
+      ];
+      script = ''
+        want=${name}
+        if [ -e /etc/meccanicos/hostname ]; then
+          picked=$(tr -d '[:space:]' < /etc/meccanicos/hostname)
+          if [ -n "$picked" ] && [ ${name} = ${lib.escapeShellArg distro.hostName} ]; then
+            want=$picked
+          else
+            rm -f /etc/meccanicos/hostname # a rebuild names it now
+          fi
+        fi
+        [ "$(hostname)" = "$want" ] || hostname "$want"
+      '';
+    };
   networking.networkmanager.enable = true;
   time.timeZone = lib.mkDefault null; # /etc/localtime written by the installer
   # Every language the installer offers (scripts/mos-install.py) works

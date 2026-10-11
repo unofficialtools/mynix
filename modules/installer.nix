@@ -51,6 +51,7 @@ let
       export MECCANICOS_FLAKE=${etcNixos}
       export MECCANICOS_COMMIT=${flakeCommit}
       export MECCANICOS_NAME=${lib.escapeShellArg distro.name}
+      export MECCANICOS_HOSTNAME=${lib.escapeShellArg distro.hostName}
       export MECCANICOS_PYLIB=${../scripts/lib}
       export MECCANICOS_ISO_LABEL=${lib.escapeShellArg config.isoImage.volumeID}
       exec ${python}/bin/python3 ${../scripts/mos-install.py} "$@"

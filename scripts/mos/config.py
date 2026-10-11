@@ -41,6 +41,7 @@ import glob
 import os
 import re
 import shutil
+import socket
 import sys
 import tarfile
 import tempfile
@@ -117,13 +118,14 @@ def set_system_toml(key, value):
 class Setting:
     """key: "group.name"; system: needs root (and, installed, a rebuild);
     choices: allowed values, or a function checking one; runtime: lives only
-    in settings.toml and is applied at login by `mos-config apply`."""
+    in settings.toml and is applied at login by `mos-config apply`; machine:
+    belongs to this computer, so never in settings.toml (export/import)."""
 
     def __init__(self, key, help, get, set, system=False, choices=None, rebuild=False,
-                 runtime=False, live=True, example=None):
+                 runtime=False, live=True, example=None, machine=False):
         self.key, self.help, self._get, self._set = key, help, get, set
         self.system, self.choices, self.rebuild, self.runtime, self.live = system, choices, rebuild, runtime, live
-        self.example = example
+        self.example, self.machine = example, machine
 
     def available(self):
         return self.live or c.installed()
@@ -622,6 +624,28 @@ def set_remote_unlock(on):
     c.run("mos-unlock", "remote" if on else "remove-remote", check=True)
 
 
+# network.hostname -- the name other machines see. The rebuild renames the
+# running system, and X lets a program in only with a cookie filed under the
+# hostname: copy this session's cookies to the new name first, or nothing new
+# opens until the next login.
+def hostname_choice(text):
+    t = text.strip().lower()
+    if not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", t):
+        raise c.UsageError("letters, digits and -, not starting or ending with -")
+    return t
+
+
+def set_hostname(v):
+    old = socket.gethostname()
+    for line in c.output("xauth", "list").splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0].startswith(old + "/"):
+            c.run("xauth", "add", v + parts[0][len(old):], parts[1], parts[2])
+    set_system_toml("hostname", v)
+    # The installer's first-boot name (modules/installed.nix: mos-hostname) is superseded.
+    c.run("rm", "-f", "/etc/meccanicos/hostname", sudo=True)
+
+
 def get_gpu():
     data = system_toml()
     return data.get("gpu", "auto")
@@ -690,6 +714,9 @@ SETTINGS = [
     Setting("security.auto_disconnect", "disconnect by itself when someone unknown logs in with SSH",
             lambda: login_setting("auto_disconnect", False), lambda v: None, choices=onoff, runtime=True,
             live=False),
+    Setting("network.hostname", "this computer's name, as other machines see it",
+            from_system("hostname", None, socket.gethostname), set_hostname, system=True, rebuild=True,
+            live=False, choices=hostname_choice, example="laptop", machine=True),
     Setting("graphics.driver", "graphics driver: auto, nvidia or open (applies at the next start)",
             get_gpu, to_system("gpu"), system=True, rebuild=True, live=False, choices=["auto", "nvidia", "open"]),
 ]
@@ -758,7 +785,8 @@ def visible():
 def change(s, value):
     """Set and record one (checked) value; True if it waits for a rebuild."""
     s._set(value)
-    remember(s.key, value)
+    if not s.machine:
+        remember(s.key, value)
     c.log("config", f"set {s.key} = {show(value)}")
     return s.rebuild and c.installed()
 
@@ -1191,7 +1219,7 @@ def cmd_export(args):
     path = os.path.abspath(files[0]) if files else c.SETTINGS
     data = mine()
     for s in SETTINGS:
-        if s.available():
+        if s.available() and not s.machine:
             v = s.get()
             if v is not None:
                 group, name = s.key.split(".", 1)
@@ -1247,7 +1275,7 @@ def cmd_import(args):
     changes, needs_rebuild = [], False
     for s in SETTINGS:
         v = stored(data, s.key)
-        if v is None or not s.available():
+        if v is None or not s.available() or s.machine:
             continue
         if show(s.get()) != show(v):
             changes.append((s, v))
